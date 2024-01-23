@@ -1,0 +1,8 @@
+mentor_name,mentor_gender,mentor_programmes_all,mentor_programmes,mentor_type,mentor_majors
+MOR1,male,Eng;Sc,Eng,1,c
+MOR2,male,Eng;Sc,Sc,1,
+MOR3,male,Eng;Sc,Eng,1,c
+MOR4,male,Eng;Sc,Sc,0,b;c
+MOR5,female,Eng,Eng,0,c
+MOR6,female,,,1,
+MOR7,female,Eng;Sc,Sc,0,a;c

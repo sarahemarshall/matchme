@@ -1,0 +1,7 @@
+mentee_name,mentee_gender_pref,mentee_programme,mentee_type_mentor_required,mentee_major1
+MEE1,male,Eng,0,e
+MEE2,female,Eng,1,c
+MEE3,female,Sc,0,b
+MEE4,no_pref,Eng,1,c
+MEE5,no_pref,Sc,1,c
+MEE6,female,Eng,0,d

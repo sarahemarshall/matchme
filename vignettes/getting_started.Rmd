@@ -1,0 +1,558 @@
+---
+title: "Getting Started with matchme - a package to facilitate matching mentees and mentors"
+author: "Sarah Marshall"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting Started with matchme - a package to facilitate matching mentees and mentors}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+
+options(width = 150)
+library(tidyverse)
+library(matchme)
+library(lpSolve)
+```
+
+# Introduction 
+
+## Overview
+## Data Requirements
+
+
+# Example 1 - Extract "best match"
+
+### Load data
+```{r}
+
+mentee_data <- read_csv("csvdata/example2_mentee_data.csv")
+
+mentor_data <- read_csv("csvdata/example2_mentor_data.csv")
+
+
+ 
+# create sample "original" matches (based on 1=1, 2=2 etc) - intentionally not a good match
+sample_matches <- tibble(
+  mentee_name = mentee_data$mentee_name,
+  mentor_name = mentor_data$mentor_name[1:50]
+)
+
+
+```
+
+
+### Specify matching criteria for 3 versions of the heuristic.
+
+Criteria need to match column names of datasets.
+
+
+"filters" allow only certain groups to be included in a particular iteration
+
+```{r}
+
+# version 1
+# this has 11 iterations, each list has 11 elements
+matching_criteria <- list()
+  matching_criteria[[1]] <- tibble(
+    mentee_criteria = list(c("mentee_gender_pref", "mentee_type_mentor_required", "mentee_programme", "mentee_major1"),
+                           c( "mentee_type_mentor_required","mentee_programme", "mentee_major1"),
+                           c("mentee_gender_pref", "mentee_type_mentor_required", "mentee_programme"),
+                           c( "mentee_type_mentor_required","mentee_programme"),
+                           c( "mentee_gender_pref", "mentee_type_mentor_required"),
+                           c("mentee_type_mentor_required"),
+                           c("mentee_gender_pref"),
+                           c( "mentee_type_mentor_required","mentee_programme"),
+                           c("mentee_type_mentor_required"),
+                           c("mentee_programme"),
+                           c()),
+    mentor_criteria = list(c(  "mentor_gender",  "mentor_type", "mentor_programmes", "mentor_majors"),
+                           c( "mentor_type", "mentor_programmes", "mentor_majors"),
+                           c(  "mentor_gender",  "mentor_type", "mentor_programmes"),
+                           c( "mentor_type", "mentor_programmes"),
+                           c(  "mentor_gender","mentor_type"),
+                           c("mentor_type"),
+                           c("mentor_gender"),
+                           c("mentor_type", "mentor_programmes"),
+                           c( "mentor_type"),
+                           c("mentor_programmes"),
+                           c()),
+    mentee_filter = list(NULL,  
+                         "mentee_gender_pref == 'no_pref' ",
+                         NULL,  
+                         "mentee_gender_pref == 'no_pref' ",
+                         NULL,
+                         "mentee_gender_pref == 'no_pref' ",
+                         NULL, NULL, NULL, NULL, 
+                         NULL),
+    mentor_filter = list(NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL)
+  )
+  
+  
+  
+  
+  matching_criteria[[2]] <- tibble(
+    mentee_criteria = list(c( "mentee_gender_pref", "mentee_type_mentor_required", "mentee_programme"),
+                           c( "mentee_type_mentor_required", "mentee_programme"),
+                           c( "mentee_gender_pref", "mentee_type_mentor_required"),
+                           c()),
+    mentor_criteria = list(c( "mentor_gender", "mentor_type", "mentor_programmes"),
+                           c( "mentor_type", "mentor_programmes"),
+                           c(  "mentor_gender", "mentor_type"),
+                          c()),
+    mentee_filter = list(NULL,  
+                         "mentee_gender_pref == 'no_pref' ",
+                         NULL,
+                        NULL),
+    mentor_filter = list(NULL,NULL, NULL, NULL)
+  )
+  
+  matching_criteria[[3]] <- tibble(
+    mentee_criteria = list(c("mentee_gender_pref", "mentee_type_mentor_required", "mentee_programme"),
+                           c("mentee_gender_pref"),
+                           c()),
+    mentor_criteria = list(c("mentor_gender", "mentor_type", "mentor_programmes"),
+                           c("mentor_gender"),
+                           c()),
+    mentee_filter = list(NULL,  NULL,  NULL),
+    mentor_filter = list(NULL, NULL, NULL)
+  )
+  
+  
+
+```
+
+### Specify weights for LP
+```{r}
+# for LP only - each row is a different version.
+# used with scoring_criteria to specify what columns should be used
+# names in weights correspond to column names in mentee data
+weights <- tribble(~gender_pref, ~type_mentor_required, ~programme,  ~major1, ~name,
+                      0.5, 0.25, 0.15,0.1, "gender priority",
+                     0.25, 0.25, 0.25,  0.25,  "equal",
+                    1, 0, 0,0 ,  "gender only"
+                     )
+
+
+
+
+
+```
+
+### Specify scoring criteria
+
+* Criteria need to match column names of datasets.
+* `_filters` allow pair to get a score if criteria is met, i.e. it overrules the mentee/mentor criteria.
+* `match_type` specifies type of match. e.g.,
+   - exact: value in column mentee_type_mentor_required must equal exactly the value in column mentor_type for a match to occur
+   - subset: value in column mentee_programme must equal one of the values in column mentor_programmes_all for a match to occur
+- exact with filter: value in column mentee_gender_pref must equal exactly the value in column mentor_gender, 
+or mentee_gender_pref must equal  'no_pref' for a match to occur
+
+
+```{r}
+
+# used to compare all methods
+scoring_criteria <- tibble(
+  mentee_criteria = c("mentee_gender_pref", "mentee_type_mentor_required", "mentee_programme",  "mentee_major1"),
+  mentor_criteria = c("mentor_gender",  "mentor_type", "mentor_programmes_all", "mentor_majors"),
+  mentee_filter =  c("mentee_gender_pref == 'no_pref'", NA, NA, NA),
+  mentor_filter = c(NA, NA,NA, NA),
+  match_type = c("exact", "exact","subset", "subset"),
+  weight = c(0.5,0.25, 0.15, 0.1)
+) %>% mutate(
+  match_name =  str_replace(mentee_criteria, "mentee_", ""))
+ 
+
+
+
+```
+
+### Get matches
+```{r}
+
+results <- get_and_evaluate_matches( mentee_data=mentee_data, mentor_data=mentor_data,
+                        scoring_criteria = scoring_criteria,
+                        weights = weights,
+                        matching_criteria = matching_criteria,
+                        valIfNA = 0,
+                        compare_original = TRUE, 
+                        original_matches_clean = sample_matches,
+                        original_name = "alphabetical",
+                        verbose = TRUE,
+                        saveAllData = TRUE
+                        )
+
+```
+
+
+Inspect performance of algorithms
+```{r}
+results$all_results
+```
+
+```{r, eval = TRUE}
+best_matches = get_best_matches(results = results 
+, criteria = "mean_score")
+
+best_matches$matches
+best_matches$unmatched_mentees
+best_matches$unmatched_mentors
+
+```
+
+Notice that the unmatched mentors didn't complete most of the columns.
+
+# Example 2 - Extract matches from all algorithms (small example + more details)
+
+This example is a small example with 6 mentees and 7 mentors.
+
+Matches are made with the following principles in mind:
+
+1. Mentees are assigned a mentor of their preferred gender
+1. Mentees are assigned a mentor of the appropriate type (1st year = academic, 2nd year +  = industry)
+1. Mentees are assigned a mentor who aligns with the programme and subject of study.
+
+
+### Load data
+```{r}
+
+mentee_data <- read_csv("csvdata/example1_mentee_data.csv")
+
+mentor_data <- read_csv("csvdata/example1_mentor_data.csv")
+
+# create sample "original" matches (based on 1=1, 2=2 etc) - intentionally not a good match
+sample_matches <- tibble(
+  mentee_name = mentee_data$mentee_name,
+  mentor_name = mentor_data$mentor_name[1:6]
+)
+```
+
+
+### Specify matching criteria for 2 versions of the heuristic.
+
+Criteria need to match column names of datasets.
+
+
+"filters" allow only certain groups to be included in a particular iteration
+
+```{r}
+
+# version 1
+# this has 6 iterations, each list has 6 elements
+matching_criteria <- list()
+matching_criteria[[1]] <- tibble(
+  mentee_criteria = list(c( "mentee_gender_pref", "mentee_type_mentor_required", "mentee_programme"),
+                         c( "mentee_type_mentor_required", "mentee_programme"),
+                         c( "mentee_gender_pref", "mentee_type_mentor_required"),
+                         c("mentee_type_mentor_required"),
+                         c("mentee_gender_pref"),
+                         c()),
+  mentor_criteria = list(c( "mentor_gender", "mentor_type", "mentor_programmes"),
+                         c( "mentor_type", "mentor_programmes"),
+                         c(  "mentor_gender", "mentor_type"),
+                         c("mentor_type"),
+                         c("mentor_gender"),
+                         c()),
+  mentee_filter = list(NULL,  
+                       "mentee_gender_pref == 'no_pref' ",
+                       NULL,
+                        "mentee_gender_pref == 'no_pref' ",
+                        NULL, 
+                       NULL),
+  mentor_filter = list(NULL, NULL, NULL, NULL, NULL, NULL)
+)
+
+# version 2
+# this has 2 iterations, each list has 2 elements
+matching_criteria[[2]] <- tibble(
+  mentee_criteria = list(c("mentee_gender_pref", "mentee_type_mentor_required", "mentee_programme"),
+                         c()),
+  mentor_criteria = list(c("mentor_gender", "mentor_type", "mentor_programmes"),
+                         c()),
+  mentee_filter = list(NULL,    NULL),
+  mentor_filter = list(NULL, NULL)
+)
+
+
+
+
+```
+
+
+### Specify weights for LP
+```{r}
+# for LP only - each row is a different version.
+# used with scoring_criteria to specify what columns should be used
+# names in weights correspond to column names in mentee data
+
+weights <- tribble(~gender_pref, ~type_mentor_required, ~programme,  ~major1, ~name,
+                      0.5, 0.25, 0.15,0.1, "gender priority",
+                     0.25, 0.25, 0.25,  0.25,  "equal",
+                     )
+
+
+
+
+
+```
+
+
+### Specify scoring criteria
+
+* Criteria need to match column names of datasets.
+* `_filters` allow pair to get a score if criteria is met, i.e. it overrules the mentee/mentor criteria.
+* `match_type` specifies type of match. e.g.,
+   - exact: value in column mentee_type_mentor_required must equal exactly the value in column mentor_type for a match to occur
+   - subset: value in column mentee_programme must equal one of the values in column mentor_programmes_all for a match to occur
+- exact with filter: value in column mentee_gender_pref must equal exactly the value in column mentor_gender, 
+or mentee_gender_pref must equal  'no_pref' for a match to occur
+
+
+
+```{r}
+
+# used to compare all methods
+# criteria need to match 
+scoring_criteria <- tibble(
+  mentee_criteria = c("mentee_gender_pref", "mentee_type_mentor_required", "mentee_programme",  "mentee_major1"),
+  mentor_criteria = c("mentor_gender",  "mentor_type", "mentor_programmes_all", "mentor_majors"),
+  mentee_filter =  c("mentee_gender_pref == 'no_pref'", NA, NA, NA),
+  mentor_filter = c(NA, NA,NA, NA),
+  match_type = c("exact", "exact","subset", "subset"),
+  weight = c(0.5,0.25, 0.15, 0.1)
+) %>% mutate(
+  match_name =  str_replace(mentee_criteria, "mentee_", ""))
+ 
+
+
+
+```
+
+### Get matches
+```{r}
+
+results <- get_and_evaluate_matches( mentee_data=mentee_data, mentor_data=mentor_data,
+                        scoring_criteria = scoring_criteria,
+                        weights = weights,
+                        matching_criteria = matching_criteria,
+                        valIfNA = 0,
+                        compare_original = TRUE, 
+                        original_matches_clean = sample_matches,
+                        original_name = "alphabetical",
+                        verbose = TRUE,
+                        saveAllData = TRUE
+                        )
+
+```
+
+
+Inspect performance of algorithms
+```{r}
+
+results$all_results
+```
+
+
+Inspect matches from 2 heuristics
+
+```{r}
+results$matches$heur_match[[1]]
+results$matches$heur_match[[2]]
+
+```
+
+
+Inspect matches from 2 LP models
+
+```{r}
+results$matches$lp_match[[1]]$matches
+results$matches$lp_match[[2]]$matches
+
+```
+
+Inspect original match data (in this case, alphabetical)
+
+```{r}
+results$matches$original_match
+
+```
+
+Additional information available about rule-based heuristic 
+
+(example for 1st version of heuristic)
+
+```{r}
+results$matches$heur_match_all_data[[1]]$unmatched_mentors
+results$matches$heur_match_all_data[[1]]$unmatched_mentees
+
+```
+```{r, results = "hide"}
+results$matches$heur_match_all_data[[1]]$matches_by_iteration
+
+```
+
+
+# Example 3 - Non-student example
+
+## Generate data
+
+* mentee fields must start with "mentee_"
+* mentee data must contain field "mentee_name"
+* mentor fields must start with "mentor_"
+* mentor data must contain field "mentor_name"
+
+
+```{r}
+set.seed(1)
+n_mees = 100
+n_mors = 90
+fields = letters[1:5]
+mbti = c("ISFJ", "ISTJ", "ESTJ", "ESFJ" , "ISFP", "ISTP", "ESTP", "ESFP", "INFJ", "INTJ", "ENTJ", "ENFJ", "INFP", "INTP", "ENTP", "ENFP")
+
+# properties must start with "mentee_"
+(mentee_data <- tibble(
+  mentee_name = paste0("A", 1:n_mees), # must have mentee_name field
+  mentee_field = sample(size = n_mees,  fields, replace = TRUE),
+  mentee_mbti = sample(size = n_mees, c("no pref",mbti), replace = TRUE)
+))
+
+mentor_data <- tibble(
+  mentor_name = paste0("B", 1:n_mors), # must have mentor_name field
+  mentor_field = sample(size = n_mors, fields, replace = TRUE),
+  mentor_mbtiiii = sample(size = n_mors, mbti, replace = TRUE)
+) %>% rowwise() %>% 
+  mutate( 
+    mentor_fields = paste(unique(c(mentor_field, sample(size = 2, fields, replace = TRUE))),   collapse = ";")
+)
+ 
+
+```
+
+
+### Specify matching criteria for 2 versions of the heuristic.
+
+Criteria need to match column names of datasets.
+
+
+"filters" allow only certain groups to be included in a particular iteration
+
+```{r}
+
+# version 1
+# this has 6 iterations, each list has 6 elements
+matching_criteria <- list()
+matching_criteria[[1]] <- tibble(
+  mentee_criteria = list(c( "mentee_field", "mentee_mbti"),
+                         c( "mentee_field"),
+                         c( "mentee_mbti"),
+                         c()),
+  mentor_criteria = list(c( "mentor_field", "mentor_mbtiiii"),
+                         c( "mentor_field"),
+                         c(  "mentor_mbtiiii"),
+                         c()),
+  mentee_filter = list(NULL,  
+                       "mentee_mbti == 'no_pref'",
+                       NULL, 
+                       NULL),
+  mentor_filter = list(NULL, NULL, NULL, NULL)
+)
+
+# version 2
+# this has 2 iterations, each list has 2 elements
+matching_criteria[[2]] <- tibble(
+  mentee_criteria = list(c("mentee_field"),
+                         c()),
+  mentor_criteria = list(c("mentor_field"),
+                         c()),
+  mentee_filter = list(NULL,    NULL),
+  mentor_filter = list(NULL, NULL)
+)
+
+
+
+
+```
+
+### Specify weights for LP
+```{r}
+# for LP only - each row is a different version.
+# used with scoring_criteria to specify what columns should be used
+# names in weights correspond to column names in mentee data
+weights <- tribble(~field, ~mbti, ~name,
+                      0.75, 0.25, "field priority",
+                     0.5, 0.5 , "equal",
+                     )
+
+
+
+
+
+```
+
+### Specify scoring criteria
+
+* Criteria need to match column names of datasets.
+* `_filters` allow pair to get a score if criteria is met, i.e. it overrules the mentee/mentor criteria.
+ 
+
+```{r}
+
+# used to compare all methods
+scoring_criteria <- tibble(
+  mentee_criteria = c("mentee_field", "mentee_mbti"),
+  mentor_criteria = c("mentor_fields",  "mentor_mbtiiii"),
+  mentee_filter =  c(NA, "mentee_mbti == 'no pref'"),
+  mentor_filter = c(NA, NA),
+  match_type = c("subset", "exact"),
+  weight = c(0.75,0.25)
+) %>% mutate(
+  match_name =  str_replace(mentee_criteria, "mentee_", ""))
+ 
+
+
+
+```
+
+### Get matches
+```{r}
+
+results <- get_and_evaluate_matches( mentee_data=mentee_data, mentor_data=mentor_data,
+                        scoring_criteria = scoring_criteria,
+                        weights = weights,
+                        matching_criteria = matching_criteria,
+                        valIfNA = 0,
+                        compare_original = TRUE, 
+                        #original_matches_clean = sample_matches,
+                        #original_name = "alphabetical",
+                        verbose = TRUE,
+                        saveAllData = TRUE
+                        )
+
+```
+
+
+Inspect performance of algorithms
+```{r}
+results$all_results
+
+#results$matches$heur_match[[1]]%>% arrange(mentee_name)
+
+```
+
+```{r, eval = TRUE}
+best_matches = get_best_matches(results = results 
+, criteria = "mean_score")
+
+best_matches$matches %>% arrange(desc(mentee_mbti))
+best_matches$unmatched_mentees
+best_matches$unmatched_mentors
+
+```
+
