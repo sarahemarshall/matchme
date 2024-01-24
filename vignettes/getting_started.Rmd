@@ -411,8 +411,8 @@ results$matches$heur_match_all_data[[1]]$matches_by_iteration
 
 ```{r}
 set.seed(1)
-n_mees = 100
-n_mors = 90
+n_mees = 10
+n_mors = 4
 fields = letters[1:5]
 mbti = c("ISFJ", "ISTJ", "ESTJ", "ESFJ" , "ISFP", "ISTP", "ESTP", "ESFP", "INFJ", "INTJ", "ENTJ", "ENFJ", "INFP", "INTP", "ENTP", "ENFP")
 
@@ -528,6 +528,7 @@ results <- get_and_evaluate_matches( mentee_data=mentee_data, mentor_data=mentor
                         weights = weights,
                         matching_criteria = matching_criteria,
                         valIfNA = 0,
+                        num_mentees_per_mentor = 2, 
                         compare_original = TRUE, 
                         #original_matches_clean = sample_matches,
                         #original_name = "alphabetical",
@@ -543,7 +544,7 @@ Inspect performance of algorithms
 results$all_results
 
 #results$matches$heur_match[[1]]%>% arrange(mentee_name)
-
+results$matches$lp_scoring_data[[1]]$match_score_data
 ```
 
 ```{r, eval = TRUE}

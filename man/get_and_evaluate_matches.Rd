@@ -10,6 +10,8 @@ get_and_evaluate_matches(
   scoring_criteria,
   weights = NULL,
   matching_criteria,
+  num_mentees_per_mentor = 1,
+  num_mentors_per_mentee = 1,
   valIfNA = 0,
   compare_original = FALSE,
   original_matches_clean = NULL,
@@ -26,17 +28,17 @@ get_and_evaluate_matches(
 
 \item{matching_criteria}{df of criteria used in heuristic}
 
+\item{num_mentees_per_mentor}{default = 1}
+
+\item{num_mentors_per_mentee}{default = 1}
+
 \item{valIfNA}{default = 0}
 
 \item{compare_original}{boolean. If TRUE compares heuristic and LP to original data}
 
 \item{verbose}{boolean}
 
-\item{m_ee}{df of mentee data}
-
-\item{m_or}{df of mentor data}
-
-\item{original_matches_raw}{optional df containing matches}
+\item{saveTimes}{}
 }
 \value{
 df showing performance of each method

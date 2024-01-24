@@ -40,15 +40,17 @@ get_LP_based_matches <- function(scores, m_ee, m_or,
 
   n_mentees <- dim(score_matrix)[1]
   n_mentors <- dim(score_matrix)[2]
-  if(n_mentees <= n_mentors){
+  if(n_mentees <= n_mentors*num_mentees_per_mentor){
     row.signs <- rep("=", n_mentees)
   }else{
     row.signs <- rep("<=", n_mentees)
   }
   row.rhs <- rep(num_mentors_per_mentee, n_mentees)
 
-  if(n_mentors <= n_mentees){
+  if(n_mentors*num_mentees_per_mentor <= n_mentees){# & num_mentees_per_mentor==1){
     col.signs <- rep("=", n_mentors)
+  #else if(n_mentors*num_mentees_per_mentor <= n_mentees & num_mentees_per_mentor>1){
+  #  col.signs <- rep("=", n_mentors)
   } else{
     col.signs <- rep("<=", n_mentors)
 
@@ -620,15 +622,20 @@ calculate_match_score_summary <- function(match_data, scoring_criteria,
 
 #' Get and evaluate matches using heuristic and LP methods
 #'
-#' @param m_ee df of mentee data
-#' @param m_or df of mentor data
 #' @param scoring_criteria df of criteria used for scoring matches
 #' @param weights df weights given to each row in scoring criteria (optional)
 #' @param matching_criteria df of criteria used in heuristic
 #' @param valIfNA default = 0
 #' @param compare_original boolean. If TRUE compares heuristic and LP to original data
-#' @param original_matches_raw optional df containing matches
 #' @param verbose boolean
+#' @param mentee_data
+#' @param mentor_data
+#' @param num_mentees_per_mentor default = 1
+#' @param num_mentors_per_mentee default = 1
+#' @param original_matches_clean
+#' @param original_name
+#' @param saveAllData
+#' @param saveTimes
 #'
 #' @return df showing performance of each method
 #' @export
@@ -638,6 +645,8 @@ get_and_evaluate_matches <- function(mentee_data, mentor_data,
                         scoring_criteria,
                         weights = NULL,
                         matching_criteria,
+                        num_mentees_per_mentor = 1,
+                        num_mentors_per_mentee = 1,
                         valIfNA = 0,
                         compare_original = FALSE, original_matches_clean = NULL,
                         original_name = "original",
@@ -823,7 +832,9 @@ get_and_evaluate_matches <- function(mentee_data, mentor_data,
 
       # do LP matching
       lp_match_i <-
-        get_LP_based_matches( scores = score_data$match_data_scores, m_ee=mentee_data, m_or=mentor_data
+        get_LP_based_matches( scores = score_data$match_data_scores, m_ee=mentee_data, m_or=mentor_data,
+                              num_mentees_per_mentor = num_mentees_per_mentor,
+                              num_mentors_per_mentee  = num_mentors_per_mentee,
         )
       lp_match[[i]] <- lp_match_i
       # if(verbose){
@@ -958,7 +969,9 @@ get_and_evaluate_matches <- function(mentee_data, mentor_data,
                              lp_match= lp_match, lp_scores=lp_scores, lp_scoring_data =lp_scoring_data,
                              original_match =original_match, original_scores=original_scores
                              , original_scoring_data = original_scoring_data)
-              ) )
+              ,
+         num_mentees_per_mentor = num_mentees_per_mentor,
+         num_mentors_per_mentee = num_mentors_per_mentee))
 }
 
 
@@ -977,8 +990,15 @@ get_best_matches <- function(results,   criteria = "mean_score"){
 
 if(criteria !="mean_score"){stop("function only set to use criteria=mean_score")}
 
+  temp <- results$all_results
+
+  if(  results$num_mentees_per_mentor >1){
+    #can only select LP methods
+    cat("Choosing from LP methods only as num_mentees_per_mentor > 1")
+    temp <- temp %>% filter(alg == "LP")
+  }
   best_match <-
-    results$all_results %>%
+    temp %>%
     #slice_max(!!criteria, n=1)#
     arrange(desc(mean_score)) %>% slice_head(n=1)
 
